@@ -1,0 +1,60 @@
+#================================================================================================
+
+#                                       Config of the LLMs (Snowflake)
+
+#================================================================================================
+
+snowflake:
+
+  api_key: "xxxx"  # Replace with your actual Snowflake token
+
+  base_url: "xxxx"  # Replace with your actual Snowflake endpoint URL
+
+  app_id: "xx"
+
+  aplctn_cd: "xxx"
+
+  model: "claude-4-sonnet"
+ 
+# Legacy config keys for backward compatibility
+
+conv_model: "llama3.1-70b"
+
+programmer_model: "llama3.1-70b"
+
+inspector_model: "llama3.1-70b"
+
+api_key: "xxx"
+
+base_url_conv_model: "xxxx"
+
+base_url_programmer: "xxxx"
+
+base_url_inspector: "xxxx"
+
+app_id: "edadip"
+
+aplctn_cd: "edagnai"
+ 
+#================================================================================================
+
+#                                       Config of the system
+
+#================================================================================================
+
+project_cache_path: "cache/conv_cache/"
+
+max_attempts: 5
+
+max_exe_time: 18000
+
+max_context_tokens: 7000
+
+load_chat: False
+
+chat_history_path: ""
+ 
+#knowledge integration
+
+retrieval: False
+ 
