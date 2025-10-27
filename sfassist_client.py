@@ -1,11 +1,16 @@
 """
 SF Assist Client for Elevance Health
-Adapted from snowflake_cortex_client.py to send messages like horizon_client.py
+Matches the official payload structure required by lead
 
-Key Changes:
-- Sends messages as array (like Horizon API) instead of single combined string
-- Maintains conversation history with proper role/content structure
-- Simplified _build_payload method
+Payload Structure:
+{
+  "query": {
+    "application": { aplctn_cd, app_id, app_lvl_prefix, session_id },
+    "prompt": { messages: [...] },
+    "model": { model, options },
+    "response_format": { type, schema }
+  }
+}
 """
 
 import requests
@@ -57,11 +62,10 @@ class StreamingChunk:
 
 class SFAssistClient:
     """
-    SF Assist Client - sends messages like Horizon API (array format)
+    SF Assist Client - matches official payload structure
     
-    Key Difference from original snowflake_cortex_client:
-    - Sends messages as array: [{"role": "system", ...}, {"role": "user", ...}, ...]
-    - NOT as single combined string
+    Sends messages as array: [{"role": "system", ...}, {"role": "user", ...}, ...]
+    Uses the official structure with nested application and model objects
     """
     
     def __init__(self, config_or_api_key, base_url: str = None, model: str = None):
@@ -83,16 +87,20 @@ class SFAssistClient:
                 sfassist_config = config['sfassist']
                 self.api_key = sfassist_config.get('api_key')
                 self.base_url = sfassist_config.get('base_url', '').rstrip('/')
-                self.model = sfassist_config.get('model', 'claude-4-sonnet')
-                self.app_id = sfassist_config.get('app_id', 'edadip')
-                self.aplctn_cd = sfassist_config.get('aplctn_cd', 'edagnai')
+                self.model = sfassist_config.get('model', 'snowflake-llama-3.3-70b')
+                self.app_id = sfassist_config.get('app_id', 'aedl')
+                self.aplctn_cd = sfassist_config.get('aplctn_cd', 'aedl')
+                self.app_lvl_prefix = sfassist_config.get('app_lvl_prefix', '')
+                self.session_id = sfassist_config.get('session_id', 'dsa_session')
             else:
                 # Fallback to root level
                 self.api_key = config.get('api_key')
                 self.base_url = config.get('base_url', '').rstrip('/')
-                self.model = config.get('model', 'claude-4-sonnet')
-                self.app_id = config.get('app_id', 'edadip')
-                self.aplctn_cd = config.get('aplctn_cd', 'edagnai')
+                self.model = config.get('model', 'snowflake-llama-3.3-70b')
+                self.app_id = config.get('app_id', 'aedl')
+                self.aplctn_cd = config.get('aplctn_cd', 'aedl')
+                self.app_lvl_prefix = config.get('app_lvl_prefix', '')
+                self.session_id = config.get('session_id', 'dsa_session')
                 
         elif hasattr(config_or_api_key, 'api_key') or hasattr(config_or_api_key, 'sfassist'):
             # Config object provided
@@ -103,38 +111,51 @@ class SFAssistClient:
                 sfassist_config = config.sfassist
                 self.api_key = getattr(sfassist_config, 'api_key', None)
                 self.base_url = getattr(sfassist_config, 'base_url', '').rstrip('/')
-                self.model = getattr(sfassist_config, 'model', 'claude-4-sonnet')
-                self.app_id = getattr(sfassist_config, 'app_id', 'edadip')
-                self.aplctn_cd = getattr(sfassist_config, 'aplctn_cd', 'edagnai')
+                self.model = getattr(sfassist_config, 'model', 'snowflake-llama-3.3-70b')
+                self.app_id = getattr(sfassist_config, 'app_id', 'aedl')
+                self.aplctn_cd = getattr(sfassist_config, 'aplctn_cd', 'aedl')
+                self.app_lvl_prefix = getattr(sfassist_config, 'app_lvl_prefix', '')
+                self.session_id = getattr(sfassist_config, 'session_id', 'dsa_session')
             else:
                 # Fallback to root level attributes
                 self.api_key = getattr(config, 'api_key', None)
                 self.base_url = getattr(config, 'base_url', '').rstrip('/')
-                self.model = getattr(config, 'model', 'claude-4-sonnet')
-                self.app_id = getattr(config, 'app_id', 'edadip')
-                self.aplctn_cd = getattr(config, 'aplctn_cd', 'edagnai')
+                self.model = getattr(config, 'model', 'snowflake-llama-3.3-70b')
+                self.app_id = getattr(config, 'app_id', 'aedl')
+                self.aplctn_cd = getattr(config, 'aplctn_cd', 'aedl')
+                self.app_lvl_prefix = getattr(config, 'app_lvl_prefix', '')
+                self.session_id = getattr(config, 'session_id', 'dsa_session')
         else:
             # Individual parameters provided
             self.api_key = config_or_api_key
             self.base_url = base_url.rstrip('/') if base_url else ''
-            self.model = model if model else 'claude-4-sonnet'
-            self.app_id = 'edadip'
-            self.aplctn_cd = 'edagnai'
+            self.model = model if model else 'snowflake-llama-3.3-70b'
+            self.app_id = 'aedl'
+            self.aplctn_cd = 'aedl'
+            self.app_lvl_prefix = ''
+            self.session_id = 'dsa_session'
         
         # Debug output
         print(f"DEBUG INIT: api_key={'[SET]' if self.api_key else '[EMPTY]'}")
         print(f"DEBUG INIT: base_url={self.base_url if self.base_url else '[EMPTY]'}")
         print(f"DEBUG INIT: model={self.model}")
+        print(f"DEBUG INIT: app_id={self.app_id}, aplctn_cd={self.aplctn_cd}")
         
         self.chat = self.ChatCompletion(self)
     
     def _build_payload(self, messages: List[Dict[str, str]], system_message: str = None) -> Dict:
         """
-        Build request payload - HORIZON STYLE (messages as array)
+        Build request payload - OFFICIAL STRUCTURE
         
-        This is the KEY CHANGE from the original snowflake client:
-        - Sends messages as array: [{"role": "system", ...}, {"role": "user", ...}]
-        - NOT as single combined string
+        Structure matches the format provided by lead:
+        {
+          "query": {
+            "application": { aplctn_cd, app_id, app_lvl_prefix, session_id },
+            "prompt": { messages: [...] },
+            "model": { model, options },
+            "response_format": { type, schema }
+          }
+        }
         
         Args:
             messages: List of message dicts with role and content
@@ -144,7 +165,7 @@ class SFAssistClient:
             Payload dict for SF Assist API
         """
         print(f"\n{'='*80}")
-        print(f"🔍 BUILDING PAYLOAD - HORIZON STYLE (messages as array)")
+        print(f"🔍 BUILDING PAYLOAD - OFFICIAL STRUCTURE")
         print(f"{'='*80}")
         
         # Extract system message
@@ -172,26 +193,34 @@ class SFAssistClient:
         print(f"   • System message: {len(sys_msg)} chars")
         print(f"   • User/Assistant messages: {len(filtered_messages)}")
         
-        # Build payload - SF Assist format with messages array
+        # Build payload - OFFICIAL STRUCTURE
         payload = {
             "query": {
-                "aplctn_cd": self.aplctn_cd,
-                "app_id": self.app_id,
-                "api_key": self.api_key,
-                "method": "cortex",
-                "model": self.model,
-                "sys_msg": sys_msg,
-                "limit_convs": "0",
-                "prompt": {
-                    "messages": all_messages  # 🔥 KEY CHANGE: Send as array!
+                "application": {
+                    "aplctn_cd": self.aplctn_cd,
+                    "app_id": self.app_id,
+                    "app_lvl_prefix": self.app_lvl_prefix,
+                    "session_id": self.session_id
                 },
-                "app_lvl_prefix": "edadip",
-                "user_id": "",
-                "session_id": "dsa_session"
+                "prompt": {
+                    "messages": all_messages  # 🔥 Messages as array!
+                },
+                "model": {
+                    "model": self.model,
+                    "options": {}
+                },
+                "response_format": {
+                    "type": "json",
+                    "schema": {}
+                }
             }
         }
         
-        print(f"✅ Payload built with {len(all_messages)} messages in array format")
+        print(f"✅ Payload Structure:")
+        print(f"   • application.aplctn_cd: {self.aplctn_cd}")
+        print(f"   • application.app_id: {self.app_id}")
+        print(f"   • model.model: {self.model}")
+        print(f"   • prompt.messages: {len(all_messages)} messages")
         print(f"{'='*80}\n")
         
         return payload
@@ -200,10 +229,12 @@ class SFAssistClient:
         """Make HTTP request to SF Assist API"""
         headers = {
             "Content-Type": "application/json; charset=utf-8",
-            "Accept": "application/json",
-            "api-key": self.api_key,
-            "Authorization": f'Snowflake Token="{self.api_key}"'
+            "Accept": "application/json"
         }
+        
+        # Add API key to header if available
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
         
         print(f"DEBUG: Making request to {self.base_url}")
         print(f"DEBUG: Headers: {list(headers.keys())}")
@@ -239,7 +270,7 @@ class SFAssistClient:
             Returns:
                 CompletionResponse object or Iterator[StreamingChunk] for streaming
             """
-            # Build payload (messages as array - like Horizon!)
+            # Build payload (messages as array - official structure!)
             payload = self.client._build_payload(messages)
             
             # Make request
@@ -262,8 +293,12 @@ class SFAssistClient:
                     elif 'message' in data:
                         # Horizon-style response
                         content = data['message'].get('content', '')
+                    elif 'content' in data:
+                        content = data['content']
                     else:
                         content = str(data)
+                    
+                    print(f"DEBUG: Response received ({len(content)} chars)")
                     
                     # Handle streaming vs non-streaming
                     if stream:
@@ -292,11 +327,13 @@ class SFAssistClient:
             
             else:
                 # Handle error responses
+                print(f"ERROR: Response status {response.status_code}")
+                print(f"ERROR: Response body: {response.text}")
                 try:
                     error_data = response.json()
                     raise Exception(f"API Error Response: {json.dumps(error_data, indent=2)}")
                 except json.JSONDecodeError:
-                    raise Exception(f"API Error Response: {response.text}")
+                    raise Exception(f"API Error Response ({response.status_code}): {response.text}")
         
         def _simulate_streaming(self, content: str):
             """
@@ -316,7 +353,7 @@ class SFAssistClient:
                 yield StreamingChunk(chunk_text)
 
 
-def create_sfassist_client(api_key: str, base_url: str, model: str = "claude-4-sonnet"):
+def create_sfassist_client(api_key: str, base_url: str, model: str = "snowflake-llama-3.3-70b"):
     """
     Factory function to create SF Assist client
     
